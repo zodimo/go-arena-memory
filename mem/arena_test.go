@@ -508,3 +508,351 @@ func TestArena_Integration(t *testing.T) {
 		}
 	})
 }
+
+type MyArray[T any] struct {
+	Capacity      int
+	Length        int
+	InternalArray []T
+}
+
+func NewMyArray[T any](capacity int) MyArray[T] {
+	return MyArray[T]{
+		Capacity:      capacity,
+		Length:        0,
+		InternalArray: make([]T, capacity),
+	}
+}
+
+func TestAllocateStructObject_MyArray(t *testing.T) {
+
+	t.Run("allocates MyArray with bounded slice", func(t *testing.T) {
+		memory := make([]byte, 4096)
+		arena, err := NewArena(memory)
+		if err != nil {
+			t.Fatalf("expected no error creating arena, got %v", err)
+		}
+
+		// Create a MyArray with capacity 10
+		initialArray := NewMyArray[int](10)
+		ptr, err := AllocateStructObject(arena, initialArray)
+		if err != nil {
+			t.Fatalf("expected no error allocating MyArray, got %v", err)
+		}
+		if ptr == nil {
+			t.Fatal("expected non-nil pointer")
+		}
+
+		// Verify initial state
+		if ptr.Capacity != 10 {
+			t.Errorf("expected Capacity = 10, got %d", ptr.Capacity)
+		}
+		if ptr.Length != 0 {
+			t.Errorf("expected Length = 0, got %d", ptr.Length)
+		}
+		if len(ptr.InternalArray) != 10 {
+			t.Errorf("expected InternalArray length = 10, got %d", len(ptr.InternalArray))
+		}
+		if cap(ptr.InternalArray) != 10 {
+			t.Errorf("expected InternalArray capacity = 10, got %d", cap(ptr.InternalArray))
+		}
+	})
+
+	t.Run("test bounds - valid access within capacity", func(t *testing.T) {
+		memory := make([]byte, 4096)
+		arena, _ := NewArena(memory)
+
+		initialArray := NewMyArray[int](5)
+		ptr, err := AllocateStructObject(arena, initialArray)
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
+		// Test valid access: indices 0 to Capacity-1
+		for i := 0; i < ptr.Capacity; i++ {
+			ptr.InternalArray[i] = i * 10
+			ptr.Length++
+		}
+
+		// Verify all values were written correctly
+		for i := 0; i < ptr.Capacity; i++ {
+			if ptr.InternalArray[i] != i*10 {
+				t.Errorf("expected InternalArray[%d] = %d, got %d", i, i*10, ptr.InternalArray[i])
+			}
+		}
+
+		if ptr.Length != ptr.Capacity {
+			t.Errorf("expected Length = %d, got %d", ptr.Capacity, ptr.Length)
+		}
+	})
+
+	t.Run("test bounds - lower boundary (index 0)", func(t *testing.T) {
+		memory := make([]byte, 4096)
+		arena, _ := NewArena(memory)
+
+		initialArray := NewMyArray[string](3)
+		ptr, err := AllocateStructObject(arena, initialArray)
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
+		// Test lower boundary: index 0
+		ptr.InternalArray[0] = "first"
+		ptr.Length = 1
+
+		if ptr.InternalArray[0] != "first" {
+			t.Errorf("expected InternalArray[0] = 'first', got %q", ptr.InternalArray[0])
+		}
+		if ptr.Length != 1 {
+			t.Errorf("expected Length = 1, got %d", ptr.Length)
+		}
+	})
+
+	t.Run("test bounds - upper boundary (index Capacity-1)", func(t *testing.T) {
+		memory := make([]byte, 4096)
+		arena, _ := NewArena(memory)
+
+		capacity := 7
+		initialArray := NewMyArray[float64](capacity)
+		ptr, err := AllocateStructObject(arena, initialArray)
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
+		// Test upper boundary: index Capacity-1
+		lastIndex := ptr.Capacity - 1
+		ptr.InternalArray[lastIndex] = 3.14159
+		ptr.Length = ptr.Capacity
+
+		if ptr.InternalArray[lastIndex] != 3.14159 {
+			t.Errorf("expected InternalArray[%d] = 3.14159, got %f", lastIndex, ptr.InternalArray[lastIndex])
+		}
+		if ptr.Length != capacity {
+			t.Errorf("expected Length = %d, got %d", capacity, ptr.Length)
+		}
+	})
+
+	t.Run("test bounds - out of bounds access (index >= Capacity)", func(t *testing.T) {
+		memory := make([]byte, 4096)
+		arena, _ := NewArena(memory)
+
+		capacity := 5
+		initialArray := NewMyArray[int](capacity)
+		ptr, err := AllocateStructObject(arena, initialArray)
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
+		// Test that accessing index >= Capacity would panic
+		// Note: Go slices don't prevent this at compile time, but we can test runtime behavior
+		defer func() {
+			if r := recover(); r == nil {
+				// If we reach here, the panic didn't occur, which is expected
+				// because Go slices allow access beyond length (up to capacity)
+				// But we should verify the slice is bounded by the capacity we set
+			}
+		}()
+
+		// Try to access beyond the constructed capacity
+		// Since we used make([]T, capacity), the slice has length=capacity
+		// Accessing beyond this should panic
+		shouldPanic := func() {
+			_ = ptr.InternalArray[capacity] // This should panic
+		}
+
+		panicked := false
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					panicked = true
+				}
+			}()
+			shouldPanic()
+		}()
+
+		if !panicked {
+			t.Error("expected panic when accessing index >= Capacity, but no panic occurred")
+		}
+	})
+
+	t.Run("test bounds - negative index access", func(t *testing.T) {
+		memory := make([]byte, 4096)
+		arena, _ := NewArena(memory)
+
+		initialArray := NewMyArray[int](5)
+		ptr, err := AllocateStructObject(arena, initialArray)
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
+		// Test that accessing negative index panics
+		// Use a variable to compute negative index at runtime (Go doesn't allow negative literal indices)
+		panicked := false
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					panicked = true
+				}
+			}()
+			negIndex := -1
+			_ = ptr.InternalArray[negIndex] // This should panic
+		}()
+
+		if !panicked {
+			t.Error("expected panic when accessing negative index, but no panic occurred")
+		}
+	})
+
+	t.Run("test bounds - multiple MyArray allocations", func(t *testing.T) {
+		memory := make([]byte, 8192)
+		arena, _ := NewArena(memory)
+
+		// Allocate multiple MyArray instances with different capacities
+		array1 := NewMyArray[int](3)
+		ptr1, err1 := AllocateStructObject(arena, array1)
+		if err1 != nil {
+			t.Fatalf("expected no error allocating first array, got %v", err1)
+		}
+
+		array2 := NewMyArray[int](5)
+		ptr2, err2 := AllocateStructObject(arena, array2)
+		if err2 != nil {
+			t.Fatalf("expected no error allocating second array, got %v", err2)
+		}
+
+		array3 := NewMyArray[int](2)
+		ptr3, err3 := AllocateStructObject(arena, array3)
+		if err3 != nil {
+			t.Fatalf("expected no error allocating third array, got %v", err3)
+		}
+
+		// Verify they are distinct
+		if ptr1 == ptr2 || ptr1 == ptr3 || ptr2 == ptr3 {
+			t.Fatal("expected all pointers to be distinct")
+		}
+
+		// Test bounds on each array independently
+		ptr1.InternalArray[0] = 100
+		ptr1.InternalArray[ptr1.Capacity-1] = 200
+		ptr1.Length = ptr1.Capacity
+
+		ptr2.InternalArray[0] = 300
+		ptr2.InternalArray[ptr2.Capacity-1] = 400
+		ptr2.Length = ptr2.Capacity
+
+		ptr3.InternalArray[0] = 500
+		ptr3.InternalArray[ptr3.Capacity-1] = 600
+		ptr3.Length = ptr3.Capacity
+
+		// Verify values are independent
+		if ptr1.InternalArray[0] != 100 || ptr1.InternalArray[ptr1.Capacity-1] != 200 {
+			t.Error("ptr1 values corrupted")
+		}
+		if ptr2.InternalArray[0] != 300 || ptr2.InternalArray[ptr2.Capacity-1] != 400 {
+			t.Error("ptr2 values corrupted")
+		}
+		if ptr3.InternalArray[0] != 500 || ptr3.InternalArray[ptr3.Capacity-1] != 600 {
+			t.Error("ptr3 values corrupted")
+		}
+	})
+
+	t.Run("test bounds - capacity zero", func(t *testing.T) {
+		memory := make([]byte, 4096)
+		arena, _ := NewArena(memory)
+
+		initialArray := NewMyArray[int](0)
+		ptr, err := AllocateStructObject(arena, initialArray)
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
+		if ptr.Capacity != 0 {
+			t.Errorf("expected Capacity = 0, got %d", ptr.Capacity)
+		}
+		if len(ptr.InternalArray) != 0 {
+			t.Errorf("expected InternalArray length = 0, got %d", len(ptr.InternalArray))
+		}
+
+		// Accessing any index should panic
+		panicked := false
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					panicked = true
+				}
+			}()
+			_ = ptr.InternalArray[0] // This should panic
+		}()
+
+		if !panicked {
+			t.Error("expected panic when accessing index 0 on zero-capacity array, but no panic occurred")
+		}
+	})
+
+	t.Run("test bounds - capacity one", func(t *testing.T) {
+		memory := make([]byte, 4096)
+		arena, _ := NewArena(memory)
+
+		initialArray := NewMyArray[int](1)
+		ptr, err := AllocateStructObject(arena, initialArray)
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
+		// Only index 0 should be valid
+		ptr.InternalArray[0] = 42
+		ptr.Length = 1
+
+		if ptr.InternalArray[0] != 42 {
+			t.Errorf("expected InternalArray[0] = 42, got %d", ptr.InternalArray[0])
+		}
+
+		// Index 1 should panic
+		panicked := false
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					panicked = true
+				}
+			}()
+			_ = ptr.InternalArray[1] // This should panic
+		}()
+
+		if !panicked {
+			t.Error("expected panic when accessing index 1 on capacity-1 array, but no panic occurred")
+		}
+	})
+
+	t.Run("test bounds - generic type parameter", func(t *testing.T) {
+		memory := make([]byte, 4096)
+		arena, _ := NewArena(memory)
+
+		// Test with different type parameters
+		intArray := NewMyArray[int](3)
+		ptrInt, err1 := AllocateStructObject(arena, intArray)
+		if err1 != nil {
+			t.Fatalf("expected no error, got %v", err1)
+		}
+
+		stringArray := NewMyArray[string](3)
+		ptrString, err2 := AllocateStructObject(arena, stringArray)
+		if err2 != nil {
+			t.Fatalf("expected no error, got %v", err2)
+		}
+
+		// Test bounds on both
+		ptrInt.InternalArray[0] = 1
+		ptrInt.InternalArray[ptrInt.Capacity-1] = 3
+		ptrInt.Length = ptrInt.Capacity
+
+		ptrString.InternalArray[0] = "a"
+		ptrString.InternalArray[ptrString.Capacity-1] = "c"
+		ptrString.Length = ptrString.Capacity
+
+		if ptrInt.InternalArray[0] != 1 || ptrInt.InternalArray[ptrInt.Capacity-1] != 3 {
+			t.Error("int array bounds test failed")
+		}
+		if ptrString.InternalArray[0] != "a" || ptrString.InternalArray[ptrString.Capacity-1] != "c" {
+			t.Error("string array bounds test failed")
+		}
+	})
+}

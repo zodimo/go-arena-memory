@@ -121,8 +121,13 @@ func (a *Arena) ResetEphemeralMemory() {
 func AllocateStruct[T any](a *Arena) (*T, error) {
 	// 1. Determine the size and alignment requirements for the type T
 	var zero T
-	size := unsafe.Sizeof(zero)
-	alignment := unsafe.Alignof(zero)
+	return AllocateStructObject(a, zero)
+
+}
+func AllocateStructObject[T any](a *Arena, obj T) (*T, error) {
+	// 1. Determine the size and alignment requirements for the type T
+	size := unsafe.Sizeof(obj)
+	alignment := unsafe.Alignof(obj)
 
 	// 2. Calculate necessary padding for alignment
 	// Get the starting address of the arena's memory block
@@ -157,5 +162,9 @@ func AllocateStruct[T any](a *Arena) (*T, error) {
 	structAddress := uintptr(memPointer) + structStartOffset
 
 	// c. Type-cast the raw address (uintptr) back into a Go pointer to type T (*T)
-	return (*T)(unsafe.Pointer(structAddress)), nil
+	ptr := (*T)(unsafe.Pointer(structAddress))
+
+	// Copy the obj data into the allocated struct
+	*ptr = obj
+	return ptr, nil
 }
