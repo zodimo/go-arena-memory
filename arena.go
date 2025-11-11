@@ -1,3 +1,8 @@
+// Copyright (c) 2024 Nic Barker
+// Copyright (c) 2024 go-arena-memory contributors
+//
+// This software is provided 'as-is', without any express or implied warranty.
+// See LICENSE file for full license text.
 package Arena
 
 import (

@@ -164,3 +164,8 @@ This project is inspired by and based on the [Clay](https://github.com/nicbarker
 
 **Original Repository**: [nicbarker/clay](https://github.com/nicbarker/clay)
 
+## License
+
+This project is licensed under the zlib/libpng License, matching the license of the original [Clay](https://github.com/nicbarker/clay) library that inspired this implementation.
+
+See the [LICENSE](LICENSE) file for the full license text.
