@@ -34,7 +34,7 @@ type Arena struct {
 ### Creating an Arena
 
 ```go
-import "github.com/zodimo/go-arena-memory"
+import "github.com/zodimo/go-arena-memory/arena"
 
 // Allocate a memory block (e.g., 1MB)
 memory := make([]byte, 1024*1024)
