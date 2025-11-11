@@ -33,7 +33,11 @@ func NewMemArray[T any](capacity int32, options ...MemArrayOption) MemArray[T] {
 		if err != nil {
 			panic(err)
 		}
-		internalArray := UintptrToPtr[[]T](opts.Arena.basePtr, internalArrayAddress)
+		// Convert the address to a pointer to the first element
+		firstElementPtr := UintptrToPtr[T](opts.Arena.basePtr, internalArrayAddress)
+		// Create a slice from the pointer with the correct length and capacity
+		internalArraySlice := unsafe.Slice(firstElementPtr, capacity)
+		internalArray := &internalArraySlice
 
 		return MemArray[T]{
 			Capacity:      capacity,
