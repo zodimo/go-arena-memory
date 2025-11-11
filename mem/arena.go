@@ -20,11 +20,18 @@ type Arena struct {
 	Capacity uintptr
 
 	// Memory (char *): The actual contiguous memory block managed by the arena.
-	Memory []byte
+	Memory uintptr
+
+	// basePtr is a pointer to the base of the memory block, used for safe pointer arithmetic
+	// with the race detector. This keeps the connection to the original allocation.
+	basePtr *byte
 
 	// ArenaResetOffset is the boundary between Persistent and Ephemeral memory.
 	// This field is crucial for the O(1) frame reset mechanism described in the training module.
 	ArenaResetOffset uintptr
+
+	// CacheLineSize is the size of the cache line to use for alignment.
+	CacheLineSize uintptr
 }
 type ArenaOptions struct {
 	CacheLineSize uintptr
@@ -50,53 +57,41 @@ func NewArena(memory []byte, options ...ArenaOption) (*Arena, error) {
 	for _, option := range options {
 		option(&opts)
 	}
+
+	if len(memory) == 0 {
+		return nil, errors.New("memory cannot be empty")
+	}
+
+	memStartPtr := uintptr(unsafe.Pointer(&memory[0]))
+
 	a := &Arena{
-		Memory:           memory,
+		Memory:           memStartPtr,
+		basePtr:          &memory[0],
 		Capacity:         uintptr(len(memory)),
 		NextAllocation:   0,
 		ArenaResetOffset: 0,
-	}
-
-	// cacheline-alignment:  We'll simulate that initial alignment padding here.
-	cacheLineSize := opts.CacheLineSize
-
-	// Calculate current memory start address and needed padding
-	if len(a.Memory) > 0 {
-		currentPtr := uintptr(unsafe.Pointer(&a.Memory[0]))
-		padding := (cacheLineSize - (currentPtr % cacheLineSize)) % cacheLineSize
-
-		// "Allocate" the padding space
-		if a.NextAllocation+padding <= a.Capacity {
-			a.NextAllocation += padding
-		} else {
-			// Handle error: Not enough space even for initial alignment
-			return nil, errors.New("arena too small for initial alignment")
-		}
+		CacheLineSize:    opts.CacheLineSize,
 	}
 
 	return a, nil
 }
 
 // Allocate attempts to allocate a block of memory of the given size from the arena.
-// NOTE: This implementation does not currently handle allocation alignment for the
-// *data structure* being placed, which is required for types larger than a byte.
-func (a *Arena) Allocate(size uintptr) ([]byte, error) {
-	// A full implementation would first align NextAllocation for the requested size/type
-
-	// Check if the allocation fits
-	if a.NextAllocation+size > a.Capacity {
-		// Triggers the CLAY_ERROR_TYPE_ARENA_CAPACITY_EXCEEDED scenario
-		return nil, errors.New("arena capacity exceeded: cannot allocate required memory")
+// It returns the address of the allocated memory and an error if the allocation fails.
+func (a *Arena) Allocate(size uintptr) (uintptr, error) {
+	nextAllocOffset := a.NextAllocation + ((a.CacheLineSize - ((a.NextAllocation + size) % a.CacheLineSize)) & (a.CacheLineSize - 1)) + size
+	if a.NextAllocation+size <= a.Capacity {
+		thisAllocationOffset := a.Memory + a.NextAllocation
+		a.NextAllocation = nextAllocOffset
+		return thisAllocationOffset, nil
+	} else {
+		return 0, errors.New("arena capacity exceeded: cannot allocate required memory")
 	}
+}
 
-	start := a.NextAllocation
-	end := start + size
-
-	// Bump the pointer for the next allocation
-	a.NextAllocation = end
-
-	// Return the slice representing the allocated region
-	return a.Memory[start:end], nil
+func (a *Arena) Array_Allocate_Arena(capacity int32, itemSize uint32) (uintptr, error) {
+	totalSizeBytes := uintptr(capacity) * uintptr(itemSize)
+	return a.Allocate(totalSizeBytes)
 }
 
 // InitializePersistentMemory marks the end of the persistent region.
@@ -127,42 +122,18 @@ func AllocateStruct[T any](a *Arena) (*T, error) {
 func AllocateStructObject[T any](a *Arena, obj T) (*T, error) {
 	// 1. Determine the size and alignment requirements for the type T
 	size := unsafe.Sizeof(obj)
-	alignment := unsafe.Alignof(obj)
-
-	// 2. Calculate necessary padding for alignment
-	// Get the starting address of the arena's memory block
-	memStartPtr := uintptr(unsafe.Pointer(&a.Memory[0]))
-
-	// Calculate the actual current memory address for the next allocation
-	currentAddress := memStartPtr + a.NextAllocation
-
-	// Calculate padding needed to align currentAddress to alignment
-	padding := (alignment - (currentAddress % alignment)) % alignment
-
-	// 3. Check capacity including padding
-	allocationSize := size + padding
-	if a.NextAllocation+allocationSize > a.Capacity {
-		return nil, errors.New("arena capacity exceeded: cannot allocate struct")
-	}
-
-	// 4. Apply Padding and Bump the pointer
-	a.NextAllocation += padding
-
-	// The aligned start address for the struct
-	structStartOffset := a.NextAllocation
-
-	// Bump the pointer past the struct size
-	a.NextAllocation += size
-
-	// 5. Unsafe Type-Casting (The core C-like functionality)
-	// a. Get a pointer to the start of the memory block
-	memPointer := unsafe.Pointer(&a.Memory[0])
 
 	// b. Add the offset to get the address of the newly allocated struct's memory
-	structAddress := uintptr(memPointer) + structStartOffset
+	structAddress, err := a.Allocate(size)
+	if err != nil {
+		return nil, err
+	}
 
-	// c. Type-cast the raw address (uintptr) back into a Go pointer to type T (*T)
-	ptr := (*T)(unsafe.Pointer(structAddress))
+	// c. Convert uintptr address to pointer using unsafe.Add to maintain connection
+	// to the original allocation for race detector validation
+	basePtr := uintptr(unsafe.Pointer(a.basePtr))
+	offset := structAddress - basePtr
+	ptr := (*T)(unsafe.Add(unsafe.Pointer(a.basePtr), offset))
 
 	// Copy the obj data into the allocated struct
 	*ptr = obj

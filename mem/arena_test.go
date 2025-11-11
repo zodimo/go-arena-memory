@@ -10,6 +10,16 @@ import (
 	"unsafe"
 )
 
+// uintptrToPtr safely converts a uintptr address back to a pointer by computing
+// it relative to the original slice's base pointer. This is necessary for
+// race detector's checkptr validation, which requires pointers to be derived
+// from valid Go objects.
+func uintptrToPtr[T any](base []byte, address uintptr) *T {
+	basePtr := uintptr(unsafe.Pointer(&base[0]))
+	offset := address - basePtr
+	return (*T)(unsafe.Add(unsafe.Pointer(&base[0]), offset))
+}
+
 func TestNewArena(t *testing.T) {
 	t.Run("creates arena with valid memory", func(t *testing.T) {
 		memory := make([]byte, 1024)
@@ -23,59 +33,19 @@ func TestNewArena(t *testing.T) {
 		if arena.Capacity != 1024 {
 			t.Errorf("expected capacity 1024, got %d", arena.Capacity)
 		}
-		if len(arena.Memory) != 1024 {
-			t.Errorf("expected memory length 1024, got %d", len(arena.Memory))
-		}
-		if arena.NextAllocation == 0 && len(memory) > 0 {
-			// NextAllocation should be set to cache line alignment padding
-			// It might be 0 if already aligned, but should be <= cache line size
-			if arena.NextAllocation > 64 {
-				t.Errorf("expected NextAllocation <= 64 (cache line size), got %d", arena.NextAllocation)
-			}
-		}
 	})
 
 	t.Run("creates arena with empty memory", func(t *testing.T) {
 		memory := make([]byte, 0)
 		arena, err := NewArena(memory)
-		if err != nil {
-			t.Fatalf("expected no error, got %v", err)
+		if err == nil {
+			t.Fatalf("expected error, got nil")
 		}
-		if arena.Capacity != 0 {
-			t.Errorf("expected capacity 0, got %d", arena.Capacity)
-		}
-		if arena.NextAllocation != 0 {
-			t.Errorf("expected NextAllocation 0, got %d", arena.NextAllocation)
+		if arena != nil {
+			t.Fatalf("expected arena to be nil, got %v", arena)
 		}
 	})
 
-	t.Run("handles custom cache line size", func(t *testing.T) {
-		memory := make([]byte, 1024)
-		arena, err := NewArena(memory, ArenaWithCacheLineSize(128))
-		if err != nil {
-			t.Fatalf("expected no error, got %v", err)
-		}
-		if arena.NextAllocation > 128 {
-			t.Errorf("expected NextAllocation <= 128 (custom cache line size), got %d", arena.NextAllocation)
-		}
-	})
-
-	t.Run("handles arena too small for alignment", func(t *testing.T) {
-		// Create a very small memory block that might not fit alignment
-		memory := make([]byte, 1)
-		// This might fail if alignment requires more than 1 byte
-		// The exact behavior depends on the memory address alignment
-		arena, err := NewArena(memory)
-		// We can't reliably test this without knowing the exact memory address,
-		// but we can verify it doesn't panic
-		if err != nil && arena == nil {
-			// This is acceptable - arena too small for alignment
-			return
-		}
-		if arena != nil && arena.NextAllocation > arena.Capacity {
-			t.Errorf("NextAllocation %d exceeds capacity %d", arena.NextAllocation, arena.Capacity)
-		}
-	})
 }
 
 func TestArena_Allocate(t *testing.T) {
@@ -83,15 +53,18 @@ func TestArena_Allocate(t *testing.T) {
 		memory := make([]byte, 1024)
 		arena, _ := NewArena(memory)
 
-		allocated, err := arena.Allocate(100)
+		address, err := arena.Allocate(100)
 		if err != nil {
 			t.Fatalf("expected no error, got %v", err)
 		}
-		if len(allocated) != 100 {
-			t.Errorf("expected allocated size 100, got %d", len(allocated))
+		if address == 0 {
+			t.Errorf("expected address to be non-zero, got %d", address)
 		}
-		if arena.NextAllocation < 100 {
-			t.Errorf("expected NextAllocation >= 100, got %d", arena.NextAllocation)
+
+		expectedOffset := ((arena.CacheLineSize - ((arena.NextAllocation + 100) % arena.CacheLineSize)) & (arena.CacheLineSize - 1)) + 100
+
+		if arena.NextAllocation != expectedOffset {
+			t.Errorf("expected NextAllocation to be %d, got %d", expectedOffset, arena.NextAllocation)
 		}
 	})
 
@@ -111,14 +84,15 @@ func TestArena_Allocate(t *testing.T) {
 			t.Fatalf("expected no error on second allocation, got %v", err2)
 		}
 
-		if len(block1) != 50 {
-			t.Errorf("expected block1 size 50, got %d", len(block1))
+		if block1 == 0 {
+			t.Errorf("expected block1 to be non-zero, got %d", block1)
 		}
-		if len(block2) != 100 {
-			t.Errorf("expected block2 size 100, got %d", len(block2))
+		if block2 == 0 {
+			t.Errorf("expected block2 to be non-zero, got %d", block2)
 		}
 
-		expectedOffset := initialOffset + 50 + 100
+		expectedOffset := initialOffset + 64 + 128
+
 		if arena.NextAllocation != expectedOffset {
 			t.Errorf("expected NextAllocation %d, got %d", expectedOffset, arena.NextAllocation)
 		}
@@ -145,12 +119,12 @@ func TestArena_Allocate(t *testing.T) {
 		initialOffset := arena.NextAllocation
 		available := arena.Capacity - initialOffset
 
-		allocated, err := arena.Allocate(available)
+		address, err := arena.Allocate(available)
 		if err != nil {
 			t.Fatalf("expected no error allocating up to capacity, got %v", err)
 		}
-		if len(allocated) != int(available) {
-			t.Errorf("expected allocated size %d, got %d", available, len(allocated))
+		if address == 0 {
+			t.Errorf("expected address to be non-zero, got %d", address)
 		}
 
 		// Next allocation should fail
@@ -164,20 +138,23 @@ func TestArena_Allocate(t *testing.T) {
 		memory := make([]byte, 1024)
 		arena, _ := NewArena(memory)
 
-		allocated, err := arena.Allocate(10)
+		address, err := arena.Allocate(10)
 		if err != nil {
 			t.Fatalf("expected no error, got %v", err)
 		}
 
+		buffer := uintptrToPtr[[10]byte](memory, address)
 		// Write to allocated memory
-		for i := range allocated {
-			allocated[i] = byte(i)
+		for i := range buffer {
+			buffer[i] = byte(i)
 		}
 
+		buffer2 := uintptrToPtr[[10]byte](memory, address)
+
 		// Verify the data was written
-		for i := range allocated {
-			if allocated[i] != byte(i) {
-				t.Errorf("expected allocated[%d] = %d, got %d", i, i, allocated[i])
+		for i := range buffer {
+			if buffer2[i] != byte(i) {
+				t.Errorf("expected buffer2[%d] = %d, got %d", i, i, buffer2[i])
 			}
 		}
 	})
@@ -284,7 +261,7 @@ func TestArena_AllocateStruct(t *testing.T) {
 		if err2 == nil {
 			t.Fatal("expected error when capacity exceeded, got nil")
 		}
-		if err2.Error() != "arena capacity exceeded: cannot allocate struct" {
+		if err2.Error() != "arena capacity exceeded: cannot allocate required memory" {
 			t.Errorf("expected specific error message, got %v", err2)
 		}
 	})
@@ -352,9 +329,11 @@ func TestArena_PersistentEphemeralMemory(t *testing.T) {
 			t.Fatalf("expected no error, got %v", err1)
 		}
 
+		persistentBuffer := uintptrToPtr[[100]byte](memory, persistent)
+
 		// Write to persistent memory
-		for i := range persistent {
-			persistent[i] = byte(i)
+		for i := range persistentBuffer {
+			persistentBuffer[i] = byte(i)
 		}
 
 		// Mark persistent boundary
@@ -367,9 +346,10 @@ func TestArena_PersistentEphemeralMemory(t *testing.T) {
 			t.Fatalf("expected no error, got %v", err2)
 		}
 
+		ephemeralBuffer := uintptrToPtr[[50]byte](memory, ephemeral)
 		// Write to ephemeral memory
-		for i := range ephemeral {
-			ephemeral[i] = 0xFF
+		for i := range ephemeralBuffer {
+			ephemeralBuffer[i] = 0xFF
 		}
 
 		// Reset ephemeral memory
@@ -382,10 +362,10 @@ func TestArena_PersistentEphemeralMemory(t *testing.T) {
 		}
 
 		// Verify persistent memory is still intact
-		for i := range persistent {
-			if persistent[i] != byte(i) {
+		for i := range persistentBuffer {
+			if persistentBuffer[i] != byte(i) {
 				t.Errorf("persistent memory corrupted at index %d: expected %d, got %d",
-					i, i, persistent[i])
+					i, i, persistentBuffer[i])
 			}
 		}
 	})
@@ -456,13 +436,15 @@ func TestArena_Integration(t *testing.T) {
 		if err1 != nil {
 			t.Fatalf("expected no error, got %v", err1)
 		}
-		persistent1[0] = 0xAA
+		persistent1Buffer := uintptrToPtr[[200]byte](memory, persistent1)
+		persistent1Buffer[0] = 0xAA
 
 		persistent2, err2 := arena.Allocate(100)
 		if err2 != nil {
 			t.Fatalf("expected no error, got %v", err2)
 		}
-		persistent2[0] = 0xBB
+		persistent2Buffer := uintptrToPtr[[100]byte](memory, persistent2)
+		persistent2Buffer[0] = 0xBB
 
 		// Mark persistent boundary
 		arena.InitializePersistentMemory()
@@ -472,7 +454,8 @@ func TestArena_Integration(t *testing.T) {
 		if err3 != nil {
 			t.Fatalf("expected no error, got %v", err3)
 		}
-		ephemeral1[0] = 0xCC
+		ephemeral1Buffer := uintptrToPtr[[150]byte](memory, ephemeral1)
+		ephemeral1Buffer[0] = 0xCC
 
 		// Allocate struct
 		type DataStruct struct {
@@ -488,10 +471,10 @@ func TestArena_Integration(t *testing.T) {
 		arena.ResetEphemeralMemory()
 
 		// Verify persistent data intact
-		if persistent1[0] != 0xAA {
+		if persistent1Buffer[0] != 0xAA {
 			t.Error("persistent1 data corrupted")
 		}
-		if persistent2[0] != 0xBB {
+		if persistent2Buffer[0] != 0xBB {
 			t.Error("persistent2 data corrupted")
 		}
 
@@ -500,7 +483,8 @@ func TestArena_Integration(t *testing.T) {
 		if err5 != nil {
 			t.Fatalf("expected no error after reset, got %v", err5)
 		}
-		ephemeral2[0] = 0xDD
+		ephemeral2Buffer := uintptrToPtr[[50]byte](memory, ephemeral2)
+		ephemeral2Buffer[0] = 0xDD
 
 		// Verify we can still use the arena
 		if arena.NextAllocation < arena.ArenaResetOffset {
