@@ -20,6 +20,21 @@ func TestNewMemArray(t *testing.T) {
 		}
 	})
 
+	t.Run("creates array with specified capacity and arena", func(t *testing.T) {
+		capacity := int32(10)
+		arr := NewMemArray[int](capacity, MemArrayWithArena(NewArenaWithSizeUnsafe(1024)))
+
+		if arr.Capacity != capacity {
+			t.Errorf("expected Capacity = %d, got %d", capacity, arr.Capacity)
+		}
+		if arr.Length != 0 {
+			t.Errorf("expected Length = 0, got %d", arr.Length)
+		}
+		if len(*arr.InternalArray) != int(capacity) {
+			t.Errorf("expected InternalArray length = %d, got %d", capacity, len(*arr.InternalArray))
+		}
+	})
+
 	t.Run("creates array with zero capacity", func(t *testing.T) {
 		arr := NewMemArray[int](0)
 
