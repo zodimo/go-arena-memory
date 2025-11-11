@@ -15,8 +15,8 @@ func TestNewMemArray(t *testing.T) {
 		if arr.Length != 0 {
 			t.Errorf("expected Length = 0, got %d", arr.Length)
 		}
-		if len(arr.InternalArray) != int(capacity) {
-			t.Errorf("expected InternalArray length = %d, got %d", capacity, len(arr.InternalArray))
+		if len(*arr.InternalArray) != int(capacity) {
+			t.Errorf("expected InternalArray length = %d, got %d", capacity, len(*arr.InternalArray))
 		}
 	})
 
@@ -29,8 +29,8 @@ func TestNewMemArray(t *testing.T) {
 		if arr.Length != 0 {
 			t.Errorf("expected Length = 0, got %d", arr.Length)
 		}
-		if len(arr.InternalArray) != 0 {
-			t.Errorf("expected InternalArray length = 0, got %d", len(arr.InternalArray))
+		if len(*arr.InternalArray) != 0 {
+			t.Errorf("expected InternalArray length = 0, got %d", len(*arr.InternalArray))
 		}
 	})
 
@@ -59,10 +59,10 @@ func TestNewMemArray(t *testing.T) {
 func TestMemArray_Get(t *testing.T) {
 	t.Run("gets valid index", func(t *testing.T) {
 		arr := NewMemArray[int](5)
-		arr.InternalArray[0] = 42
+		MArray_Set(&arr, 0, 42)
 		arr.Length = 1
 
-		ptr := MemArray_Get(&arr, 0)
+		ptr := MArray_Get(&arr, 0)
 		if ptr == nil {
 			t.Fatal("expected non-nil pointer")
 		}
@@ -75,7 +75,7 @@ func TestMemArray_Get(t *testing.T) {
 		arr := NewMemArray[int](5)
 		arr.Length = 3
 
-		ptr := MemArray_Get(&arr, -1)
+		ptr := MArray_Get(&arr, -1)
 		if ptr != nil {
 			t.Error("expected nil pointer for negative index")
 		}
@@ -86,12 +86,12 @@ func TestMemArray_Get(t *testing.T) {
 		arr.Length = 3
 
 		// MemArray_Get checks against capacity (len(InternalArray)), not Length
-		ptr := MemArray_Get(&arr, 3)
+		ptr := MArray_Get(&arr, 3)
 		if ptr == nil {
 			t.Error("expected non-nil pointer for index 3 (within capacity)")
 		}
 
-		ptr2 := MemArray_Get(&arr, 5)
+		ptr2 := MArray_Get(&arr, 5)
 		if ptr2 != nil {
 			t.Error("expected nil pointer for index >= capacity")
 		}
@@ -99,14 +99,14 @@ func TestMemArray_Get(t *testing.T) {
 
 	t.Run("gets multiple valid indices", func(t *testing.T) {
 		arr := NewMemArray[int](5)
-		arr.InternalArray[0] = 10
-		arr.InternalArray[1] = 20
-		arr.InternalArray[2] = 30
+		MArray_Set(&arr, 0, 10)
+		MArray_Set(&arr, 1, 20)
+		MArray_Set(&arr, 2, 30)
 		arr.Length = 3
 
-		ptr0 := MemArray_Get(&arr, 0)
-		ptr1 := MemArray_Get(&arr, 1)
-		ptr2 := MemArray_Get(&arr, 2)
+		ptr0 := MArray_Get(&arr, 0)
+		ptr1 := MArray_Get(&arr, 1)
+		ptr2 := MArray_Get(&arr, 2)
 
 		if ptr0 == nil || *ptr0 != 10 {
 			t.Errorf("expected ptr0 = 10, got %v", ptr0)
@@ -121,17 +121,17 @@ func TestMemArray_Get(t *testing.T) {
 
 	t.Run("returns pointer that can modify array", func(t *testing.T) {
 		arr := NewMemArray[int](5)
-		arr.InternalArray[0] = 42
+		MArray_Set(&arr, 0, 42)
 		arr.Length = 1
 
-		ptr := MemArray_Get(&arr, 0)
+		ptr := MArray_Get(&arr, 0)
 		if ptr == nil {
 			t.Fatal("expected non-nil pointer")
 		}
 
 		*ptr = 100
-		if arr.InternalArray[0] != 100 {
-			t.Errorf("expected InternalArray[0] = 100 after modification, got %d", arr.InternalArray[0])
+		if MArray_GetValue(&arr, 0) != 100 {
+			t.Errorf("expected InternalArray[0] = 100 after modification, got %d", (*arr.InternalArray)[0])
 		}
 	})
 }
@@ -139,7 +139,7 @@ func TestMemArray_Get(t *testing.T) {
 func TestMArray_GetValue(t *testing.T) {
 	t.Run("gets value at valid index", func(t *testing.T) {
 		arr := NewMemArray[int](5)
-		arr.InternalArray[0] = 42
+		MArray_Set(&arr, 0, 42)
 		arr.Length = 1
 
 		value := MArray_GetValue(&arr, 0)
@@ -185,9 +185,9 @@ func TestMArray_GetValue(t *testing.T) {
 
 	t.Run("gets multiple values", func(t *testing.T) {
 		arr := NewMemArray[int](5)
-		arr.InternalArray[0] = 10
-		arr.InternalArray[1] = 20
-		arr.InternalArray[2] = 30
+		MArray_Set(&arr, 0, 10)
+		MArray_Set(&arr, 1, 20)
+		MArray_Set(&arr, 2, 30)
 		arr.Length = 3
 
 		if MArray_GetValue(&arr, 0) != 10 {
@@ -216,8 +216,8 @@ func TestMArray_Add(t *testing.T) {
 		if arr.Length != 1 {
 			t.Errorf("expected Length = 1, got %d", arr.Length)
 		}
-		if arr.InternalArray[0] != 42 {
-			t.Errorf("expected InternalArray[0] = 42, got %d", arr.InternalArray[0])
+		if MArray_GetValue(&arr, 0) != 42 {
+			t.Errorf("expected InternalArray[0] = 42, got %d", (*arr.InternalArray)[0])
 		}
 	})
 
@@ -231,14 +231,14 @@ func TestMArray_Add(t *testing.T) {
 		if arr.Length != 3 {
 			t.Errorf("expected Length = 3, got %d", arr.Length)
 		}
-		if arr.InternalArray[0] != 10 {
-			t.Errorf("expected InternalArray[0] = 10, got %d", arr.InternalArray[0])
+		if MArray_GetValue(&arr, 0) != 10 {
+			t.Errorf("expected InternalArray[0] = 10, got %d", MArray_GetValue(&arr, 0))
 		}
-		if arr.InternalArray[1] != 20 {
-			t.Errorf("expected InternalArray[1] = 20, got %d", arr.InternalArray[1])
+		if MArray_GetValue(&arr, 1) != 20 {
+			t.Errorf("expected InternalArray[1] = 20, got %d", MArray_GetValue(&arr, 1))
 		}
-		if arr.InternalArray[2] != 30 {
-			t.Errorf("expected InternalArray[2] = 30, got %d", arr.InternalArray[2])
+		if MArray_GetValue(&arr, 2) != 30 {
+			t.Errorf("expected InternalArray[2] = 30, got %d", MArray_GetValue(&arr, 2))
 		}
 	})
 
@@ -290,8 +290,8 @@ func TestMArray_Set(t *testing.T) {
 		arr.Length = 3
 
 		MArray_Set(&arr, 1, 100)
-		if arr.InternalArray[1] != 100 {
-			t.Errorf("expected InternalArray[1] = 100, got %d", arr.InternalArray[1])
+		if MArray_GetValue(&arr, 1) != 100 {
+			t.Errorf("expected InternalArray[1] = 100, got %d", MArray_GetValue(&arr, 1))
 		}
 	})
 
@@ -300,8 +300,8 @@ func TestMArray_Set(t *testing.T) {
 		arr.Length = 3
 
 		MArray_Set(&arr, 0, 42)
-		if arr.InternalArray[0] != 42 {
-			t.Errorf("expected InternalArray[0] = 42, got %d", arr.InternalArray[0])
+		if MArray_GetValue(&arr, 0) != 42 {
+			t.Errorf("expected InternalArray[0] = 42, got %d", MArray_GetValue(&arr, 0))
 		}
 	})
 
@@ -310,25 +310,25 @@ func TestMArray_Set(t *testing.T) {
 		arr.Length = 3
 
 		MArray_Set(&arr, 4, 99)
-		if arr.InternalArray[4] != 99 {
-			t.Errorf("expected InternalArray[4] = 99, got %d", arr.InternalArray[4])
+		if MArray_GetValue(&arr, 4) != 99 {
+			t.Errorf("expected InternalArray[4] = 99, got %d", MArray_GetValue(&arr, 4))
 		}
 	})
 
 	t.Run("does not set value for negative index", func(t *testing.T) {
 		arr := NewMemArray[int](5)
-		arr.InternalArray[0] = 10
+		MArray_Set(&arr, 0, 10)
 		arr.Length = 3
 
 		MArray_Set(&arr, -1, 999)
-		if arr.InternalArray[0] != 10 {
+		if MArray_GetValue(&arr, 0) != 10 {
 			t.Error("expected InternalArray[0] to remain unchanged")
 		}
 	})
 
 	t.Run("does not set value for index >= capacity", func(t *testing.T) {
 		arr := NewMemArray[int](5)
-		arr.InternalArray[0] = 10
+		MArray_Set(&arr, 0, 10)
 		arr.Length = 3
 
 		MArray_Set(&arr, 5, 999)
@@ -344,25 +344,25 @@ func TestMArray_Set(t *testing.T) {
 		MArray_Set(&arr, 1, 2)
 		MArray_Set(&arr, 2, 3)
 
-		if arr.InternalArray[0] != 1 {
+		if MArray_GetValue(&arr, 0) != 1 {
 			t.Error("failed to set value at index 0")
 		}
-		if arr.InternalArray[1] != 2 {
+		if MArray_GetValue(&arr, 1) != 2 {
 			t.Error("failed to set value at index 1")
 		}
-		if arr.InternalArray[2] != 3 {
+		if MArray_GetValue(&arr, 2) != 3 {
 			t.Error("failed to set value at index 2")
 		}
 	})
 
 	t.Run("overwrites existing value", func(t *testing.T) {
 		arr := NewMemArray[int](5)
-		arr.InternalArray[2] = 100
+		MArray_Set(&arr, 2, 100)
 		arr.Length = 3
 
 		MArray_Set(&arr, 2, 200)
-		if arr.InternalArray[2] != 200 {
-			t.Errorf("expected InternalArray[2] = 200, got %d", arr.InternalArray[2])
+		if MArray_GetValue(&arr, 2) != 200 {
+			t.Errorf("expected InternalArray[2] = 200, got %d", MArray_GetValue(&arr, 2))
 		}
 	})
 }
@@ -370,9 +370,10 @@ func TestMArray_Set(t *testing.T) {
 func TestMArray_RemoveSwapback(t *testing.T) {
 	t.Run("removes item at valid index", func(t *testing.T) {
 		arr := NewMemArray[int](5)
-		arr.InternalArray[0] = 10
-		arr.InternalArray[1] = 20
-		arr.InternalArray[2] = 30
+		MArray_Set(&arr, 0, 10)
+		MArray_Set(&arr, 1, 20)
+		MArray_Set(&arr, 2, 30)
+		(*arr.InternalArray)[2] = 30
 		arr.Length = 3
 
 		removed := MArray_RemoveSwapback(&arr, 1)
@@ -383,15 +384,15 @@ func TestMArray_RemoveSwapback(t *testing.T) {
 			t.Errorf("expected Length = 2, got %d", arr.Length)
 		}
 		// Last element should be swapped to index 1
-		if arr.InternalArray[1] != 30 {
-			t.Errorf("expected InternalArray[1] = 30 (swapped), got %d", arr.InternalArray[1])
+		if MArray_GetValue(&arr, 1) != 30 {
+			t.Errorf("expected InternalArray[1] = 30 (swapped), got %d", MArray_GetValue(&arr, 1))
 		}
 	})
 
 	t.Run("removes last item", func(t *testing.T) {
 		arr := NewMemArray[int](5)
-		arr.InternalArray[0] = 10
-		arr.InternalArray[1] = 20
+		MArray_Set(&arr, 0, 10)
+		MArray_Set(&arr, 1, 20)
 		arr.Length = 2
 
 		removed := MArray_RemoveSwapback(&arr, 1)
@@ -405,9 +406,9 @@ func TestMArray_RemoveSwapback(t *testing.T) {
 
 	t.Run("removes first item", func(t *testing.T) {
 		arr := NewMemArray[int](5)
-		arr.InternalArray[0] = 10
-		arr.InternalArray[1] = 20
-		arr.InternalArray[2] = 30
+		MArray_Set(&arr, 0, 10)
+		MArray_Set(&arr, 1, 20)
+		MArray_Set(&arr, 2, 30)
 		arr.Length = 3
 
 		removed := MArray_RemoveSwapback(&arr, 0)
@@ -418,14 +419,14 @@ func TestMArray_RemoveSwapback(t *testing.T) {
 			t.Errorf("expected Length = 2, got %d", arr.Length)
 		}
 		// Last element (30) should be swapped to index 0
-		if arr.InternalArray[0] != 30 {
-			t.Errorf("expected InternalArray[0] = 30 (swapped), got %d", arr.InternalArray[0])
+		if MArray_GetValue(&arr, 0) != 30 {
+			t.Errorf("expected InternalArray[0] = 30 (swapped), got %d", MArray_GetValue(&arr, 0))
 		}
 	})
 
 	t.Run("removes from single element array", func(t *testing.T) {
 		arr := NewMemArray[int](5)
-		arr.InternalArray[0] = 42
+		MArray_Set(&arr, 0, 42)
 		arr.Length = 1
 
 		removed := MArray_RemoveSwapback(&arr, 0)
@@ -439,7 +440,7 @@ func TestMArray_RemoveSwapback(t *testing.T) {
 
 	t.Run("returns zero value for negative index", func(t *testing.T) {
 		arr := NewMemArray[int](5)
-		arr.InternalArray[0] = 10
+		MArray_Set(&arr, 0, 10)
 		arr.Length = 1
 
 		removed := MArray_RemoveSwapback(&arr, -1)
@@ -453,7 +454,7 @@ func TestMArray_RemoveSwapback(t *testing.T) {
 
 	t.Run("returns zero value for index >= length", func(t *testing.T) {
 		arr := NewMemArray[int](5)
-		arr.InternalArray[0] = 10
+		MArray_Set(&arr, 0, 10)
 		arr.Length = 1
 
 		removed := MArray_RemoveSwapback(&arr, 1)
@@ -467,10 +468,10 @@ func TestMArray_RemoveSwapback(t *testing.T) {
 
 	t.Run("removes multiple items sequentially", func(t *testing.T) {
 		arr := NewMemArray[int](5)
-		arr.InternalArray[0] = 10
-		arr.InternalArray[1] = 20
-		arr.InternalArray[2] = 30
-		arr.InternalArray[3] = 40
+		MArray_Set(&arr, 0, 10)
+		MArray_Set(&arr, 1, 20)
+		MArray_Set(&arr, 2, 30)
+		MArray_Set(&arr, 3, 40)
 		arr.Length = 4
 
 		// Remove index 1 (20)
@@ -491,7 +492,7 @@ func TestMArray_RemoveSwapback(t *testing.T) {
 
 	t.Run("returns zero value for string type", func(t *testing.T) {
 		arr := NewMemArray[string](5)
-		arr.InternalArray[0] = "hello"
+		MArray_Set(&arr, 0, "hello")
 		arr.Length = 1
 
 		removed := MArray_RemoveSwapback(&arr, 10)
@@ -535,4 +536,3 @@ func TestMemArray_Integration(t *testing.T) {
 		}
 	})
 }
-

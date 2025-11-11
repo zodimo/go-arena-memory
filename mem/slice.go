@@ -21,27 +21,42 @@ func NewMemSlice[T any](length int32) MemSlice[T] {
 	}
 }
 
-func MemSlice_Get[T any](slice *MemSlice[T], index int32) *T {
+func MSlice_Set[T any](slice *MemSlice[T], index int32, item T) {
+	if !rangeCheck(index, slice.Length) {
+		return
+	}
+	slice.InternalArray[index] = item
+}
+
+func MSlice_Get[T any](slice *MemSlice[T], index int32) *T {
 	if !rangeCheck(index, slice.Length) {
 		return nil
 	}
 	return &slice.InternalArray[index]
 }
 
+func MSlice_GetValue[T any](slice *MemSlice[T], index int32) T {
+	if !rangeCheck(index, slice.Length) {
+		zero := new(T)
+		return *zero
+	}
+	return slice.InternalArray[index]
+}
+
 // CreateSliceFromRange simulates the process of creating a non-owning slice
 // reference (e.g., ElementConfigs slice) from a larger ClayArray.
 // It performs bounds checking and returns the non-owning ClaySlice.
-func CreateSliceFromRange[T any](baseArray *MemArray[T], startOffset int32, segmentLength int32) (*MemSlice[T], error) {
+func CreateSliceFromRange[T any](baseArray *MemArray[T], startOffset int32, segmentLength int32) (MemSlice[T], error) {
 	if startOffset < 0 || startOffset+segmentLength > baseArray.Length {
-		return nil, errors.New("slice range exceeds the bounds of the base array")
+		return MemSlice[T]{}, errors.New("slice range exceeds the bounds of the base array")
 	}
 
 	// The key implementation: the Go slice expression creates a reference (internalArray)
 	// that points to the segment of the base array's memory, achieving the "non-owning reference" pattern.
 	// The internalArray field in the ClaySlice now holds a pointer to the start of the segment.
-	segmentView := baseArray.InternalArray[startOffset : startOffset+segmentLength]
+	segmentView := (*baseArray.InternalArray)[startOffset : startOffset+segmentLength]
 
-	return &MemSlice[T]{
+	return MemSlice[T]{
 		Length:        segmentLength,
 		InternalArray: segmentView,
 	}, nil
