@@ -51,6 +51,20 @@ func defaultArenaOptions() ArenaOptions {
 	}
 }
 
+func NewArenaWithSize(size int) (*Arena, error) {
+	memory := make([]byte, size)
+	return NewArena(memory)
+}
+
+func NewArenaWithSizeUnsafe(size int) *Arena {
+	memory := make([]byte, size)
+	arena, err := NewArena(memory)
+	if err != nil {
+		panic(err)
+	}
+	return arena
+}
+
 // NewArena initializes the Arena structure with a pre-allocated byte slice.
 func NewArena(memory []byte, options ...ArenaOption) (*Arena, error) {
 	opts := defaultArenaOptions()
