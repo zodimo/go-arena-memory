@@ -3,7 +3,7 @@
 //
 // This software is provided 'as-is', without any express or implied warranty.
 // See LICENSE file for full license text.
-package Arena
+package mem
 
 import (
 	"testing"

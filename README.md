@@ -34,19 +34,19 @@ type Arena struct {
 ### Creating an Arena
 
 ```go
-import "github.com/zodimo/go-arena-memory/arena"
+import "github.com/zodimo/go-arena-memory/mem"
 
 // Allocate a memory block (e.g., 1MB)
 memory := make([]byte, 1024*1024)
 
 // Create a new arena with default options (64-byte cache line alignment)
-arena, err := Arena.NewArena(memory)
+arena, err := mem.NewArena(memory)
 if err != nil {
     log.Fatal(err)
 }
 
 // Or create an arena with custom cache line size
-arena, err := Arena.NewArena(memory, Arena.ArenaWithCacheLineSize(128))
+arena, err := mem.NewArena(memory, mem.ArenaWithCacheLineSize(128))
 if err != nil {
     log.Fatal(err)
 }
@@ -78,7 +78,7 @@ type MyStruct struct {
 }
 
 // Allocate a struct from the arena
-myStruct, err := Arena.AllocateStruct[MyStruct](arena)
+myStruct, err := mem.AllocateStruct[MyStruct](arena)
 if err != nil {
     log.Fatal(err)
 }
@@ -138,7 +138,7 @@ The arena supports configurable options using the functional options pattern:
 
 - **Cache Line Size**: Control the initial cache line alignment (default: 64 bytes)
   ```go
-  arena, err := Arena.NewArena(memory, Arena.ArenaWithCacheLineSize(128))
+  arena, err := mem.NewArena(memory, mem.ArenaWithCacheLineSize(128))
   ```
 
 ## Implementation Details
