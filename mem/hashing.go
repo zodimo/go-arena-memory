@@ -1,6 +1,9 @@
 package mem
 
-import "strconv"
+import (
+	"strconv"
+	"strings"
+)
 
 type HashElementId struct {
 	Id       uint32
@@ -15,7 +18,7 @@ type HashingOptions struct {
 
 var DefaultHashingOptions = HashingOptions{
 	StringIdJoiner: func(a, b string) string {
-		return a + b
+		return strings.Join([]string{a, b}, "")
 	},
 }
 
