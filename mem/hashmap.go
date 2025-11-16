@@ -2,50 +2,10 @@ package mem
 
 import "errors"
 
-type HashElementId struct {
-	Id       uint32
-	Offset   uint32
-	BaseId   uint32
-	StringId string
-}
-
 type HashMapContext[T any] struct {
 	HashMapInternal MemArray[HashMapItem[T]]
 	HashMap         MemArray[int32]
 	Generation      uint32
-}
-
-func HashString(key string, seed uint32) HashElementId {
-	hash := seed
-
-	charsBytes := []byte(key)
-
-	for _, charByte := range charsBytes {
-		hash += uint32(charByte)
-		hash += (hash << 10)
-		hash ^= (hash >> 6)
-	}
-
-	hash += (hash << 3)
-	hash ^= (hash >> 11)
-	hash += (hash << 15)
-	return HashElementId{
-		Id:       hash + 1,
-		Offset:   0,
-		BaseId:   hash + 1,
-		StringId: key,
-	} // Reserve the hash result of zero as "null id"
-}
-
-func HashNumber(offset uint32, seed uint32) HashElementId {
-	hash := seed
-	hash += (offset + 48)
-	hash += (hash << 10)
-	hash ^= (hash >> 6)
-	hash += (hash << 3)
-	hash ^= (hash >> 11)
-	hash += (hash << 15)
-	return HashElementId{Id: hash + 1, Offset: offset, BaseId: hash + 1, StringId: ""}
 }
 
 func AddHashMapItem[T any](htx *HashMapContext[T], elementId HashElementId, element *T) (*HashMapItem[T], error) {
