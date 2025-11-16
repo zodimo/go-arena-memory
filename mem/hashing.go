@@ -21,22 +21,32 @@ func (h *HashBuilder) AddBytes(data []byte, length int32) {
 		h.AddByte(charByte)
 	}
 }
-func (h *HashBuilder) AddByte(data byte) {
+func (h *HashBuilder) AddByte(data byte) *HashBuilder {
 	h.hash += uint32(data)
 	h.hash += (h.hash << 10)
 	h.hash ^= (h.hash >> 6)
+	return h
 }
-func (h *HashBuilder) AddString(key string) {
+func (h *HashBuilder) AddString(key string) *HashBuilder {
 	stringBytes := []byte(key)
 	for _, charByte := range stringBytes {
 		h.AddByte(charByte)
 	}
 	h.stringId += key
+	return h
 }
-func (h *HashBuilder) AddNumber(number uint32) {
+func (h *HashBuilder) AddNumber(number uint32) *HashBuilder {
 	h.hash += (number + 48)
 	h.hash += (h.hash << 10)
 	h.hash ^= (h.hash >> 6)
+	return h
+}
+
+func (h *HashBuilder) AddNumbers(numbers ...uint32) *HashBuilder {
+	for _, number := range numbers {
+		h.AddNumber(number)
+	}
+	return h
 }
 
 func (h *HashBuilder) build() HashElementId {
@@ -54,28 +64,14 @@ func (h *HashBuilder) build() HashElementId {
 	}
 }
 
-func (h *HashBuilder) HashString(key string) HashElementId {
-	h.AddString(key)
-	return h.build()
-}
-
-func (h *HashBuilder) HashNumber(number uint32) HashElementId {
-	h.AddNumber(number)
-	return h.build()
-}
-
 func HashString(key string, seed uint32) HashElementId {
-	return NewHashBuilder(seed).HashString(key)
+	return NewHashBuilder(seed).AddString(key).build()
 }
 
 func HashNumber(number uint32, seed uint32) HashElementId {
-	return NewHashBuilder(seed).HashNumber(number)
+	return NewHashBuilder(seed).AddNumber(number).build()
 }
 
 func HashManyNumbers(seed uint32, numbers ...uint32) HashElementId {
-	builder := NewHashBuilder(seed)
-	for _, number := range numbers {
-		builder.AddNumber(number)
-	}
-	return builder.build()
+	return NewHashBuilder(seed).AddNumbers(numbers...).build()
 }
